@@ -1,0 +1,460 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>농산물 가격 대시보드</title>
+<style>
+  :root {
+    --bg: #f6f7f5; --panel: #ffffff; --fg: #1f2421; --muted: #67706a; --line: #e3e7e3;
+    --cur: #2e7d5b; --prev: #9aa39d; --up: #d64533; --down: #2e7d5b; --track: #eef1ee;
+    color-scheme: light;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --bg: #121513; --panel: #1b1f1c; --fg: #e8ece9; --muted: #98a29b; --line: #2b312d;
+      --cur: #5fc79a; --prev: #7d867f; --up: #ff7a68; --down: #5fc79a; --track: #252a26;
+      color-scheme: dark;
+    }
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; background: var(--bg); color: var(--fg);
+    font-family: "Pretendard", "Apple SD Gothic Neo", "Malgun Gothic", "Noto Sans KR", system-ui, sans-serif; }
+  .wrap { max-width: 1040px; margin: 0 auto; padding: 24px 16px 48px; }
+  header h1 { margin: 0 0 4px; font-size: 22px; }
+  header p { margin: 0; color: var(--muted); font-size: 13px; line-height: 1.5; }
+  .card { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 16px; margin-top: 16px; }
+  .card h2 { margin: 0 0 12px; font-size: 15px; }
+  .row { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; }
+  select { font: inherit; font-size: 15px; padding: 8px 10px; border-radius: 8px; border: 1px solid var(--line);
+    background: var(--panel); color: var(--fg); min-width: 200px; }
+  .kpis { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin-top: 14px; }
+  @media (max-width: 720px) { .kpis { grid-template-columns: repeat(2, 1fr); } }
+  .kpi { border: 1px solid var(--line); border-radius: 10px; padding: 12px; }
+  .kpi .lab { font-size: 12px; color: var(--muted); }
+  .kpi .val { font-size: 22px; font-weight: 700; margin-top: 4px; font-variant-numeric: tabular-nums; }
+  .kpi .sub { font-size: 12px; color: var(--muted); margin-top: 2px; }
+  .up { color: var(--up); } .down { color: var(--down); }
+  .seg { display: inline-flex; border: 1px solid var(--line); border-radius: 8px; overflow: hidden; }
+  .seg button { font: inherit; font-size: 13px; padding: 6px 12px; border: 0; background: transparent; color: var(--muted); cursor: pointer; }
+  .seg button[aria-pressed="true"] { background: var(--cur); color: #fff; }
+  .legend { display: flex; gap: 14px; font-size: 12px; color: var(--muted); margin: 8px 0 0; }
+  .legend i { display: inline-block; width: 18px; height: 0; border-top: 2px solid var(--cur); vertical-align: middle; margin-right: 6px; }
+  .legend i.prev { border-top: 2px dashed var(--prev); }
+  #chart { position: relative; width: 100%; }
+  #chart svg { width: 100%; height: auto; display: block; }
+  #tip { position: absolute; pointer-events: none; background: var(--panel); border: 1px solid var(--line);
+    border-radius: 8px; padding: 6px 9px; font-size: 12px; line-height: 1.5; box-shadow: 0 2px 8px rgba(0,0,0,.12);
+    white-space: nowrap; display: none; z-index: 2; }
+  .bars { display: grid; gap: 4px; }
+  .bar { display: grid; grid-template-columns: minmax(110px, 190px) 1fr 64px; gap: 8px; align-items: center; width: 100%;
+    background: transparent; border: 1px solid transparent; border-radius: 8px; padding: 5px 6px; font: inherit;
+    color: inherit; cursor: pointer; text-align: left; }
+  .bar:hover, .bar[aria-current="true"] { background: var(--track); border-color: var(--line); }
+  .bar .nm { font-size: 13px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .bar .area { position: relative; height: 16px; }
+  .bar .zero { position: absolute; top: -2px; bottom: -2px; width: 1px; background: var(--muted); opacity: .6; }
+  .bar .fill { position: absolute; top: 2px; bottom: 2px; border-radius: 3px; }
+  .bar .pc { font-size: 13px; font-weight: 600; text-align: right; font-variant-numeric: tabular-nums; }
+  .filters { display: grid; gap: 10px; }
+  .chips { display: flex; gap: 6px; flex-wrap: wrap; }
+  .chip { font: inherit; font-size: 13px; padding: 5px 11px; border-radius: 999px; border: 1px solid var(--line);
+    background: transparent; color: var(--muted); cursor: pointer; }
+  .chip[aria-pressed="true"] { background: var(--cur); border-color: var(--cur); color: #fff; }
+  input[type="search"] { font: inherit; font-size: 14px; padding: 8px 10px; border-radius: 8px; border: 1px solid var(--line);
+    background: var(--panel); color: var(--fg); min-width: 180px; }
+  .gap { text-align: center; font-size: 12px; color: var(--muted); padding: 4px 0; }
+  .more { font: inherit; font-size: 13px; margin-top: 8px; padding: 6px 12px; border-radius: 8px; border: 1px solid var(--line);
+    background: transparent; color: var(--fg); cursor: pointer; }
+  .empty { font-size: 14px; color: var(--muted); padding: 12px 4px; }
+  input[type="date"] { font: inherit; font-size: 14px; padding: 6px 8px; border-radius: 8px; border: 1px solid var(--line);
+    background: var(--panel); color: var(--fg); }
+  #custom label { font-size: 13px; color: var(--muted); }
+  #periodSum { font-size: 13px; margin: 10px 0 0; line-height: 1.6; }
+  .note { font-size: 12px; color: var(--muted); line-height: 1.6; margin-top: 12px; }
+  #msg { margin-top: 16px; padding: 14px; border-radius: 10px; border: 1px solid var(--line); background: var(--panel);
+    font-size: 14px; line-height: 1.6; display: none; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <h1>농산물 가격 대시보드</h1>
+    <p id="meta">데이터를 불러오는 중…</p>
+  </header>
+
+  <div id="msg" role="alert"></div>
+
+  <section class="card" id="filters" hidden>
+    <div class="filters">
+      <div class="row">
+        <div class="seg" id="seSeg" hidden></div>
+        <input id="q" type="search" placeholder="품목 검색" aria-label="품목 검색">
+      </div>
+      <div class="chips" id="chips"></div>
+    </div>
+  </section>
+
+  <section class="card" id="overview" hidden>
+    <h2>전년 동월 대비 등락률 <span style="font-weight:400;color:var(--muted)" id="ovMonth"></span></h2>
+    <div class="bars" id="bars"></div>
+    <div id="moreWrap"></div>
+    <p class="note">막대를 누르면 아래에서 해당 품목의 상세를 볼 수 있습니다. 붉은색은 상승, 초록색은 하락입니다.</p>
+  </section>
+
+  <section class="card" id="detail" hidden>
+    <div class="row">
+      <label for="sel" style="font-size:13px;color:var(--muted)">품목 선택</label>
+      <select id="sel"></select>
+    </div>
+    <div class="kpis">
+      <div class="kpi"><div class="lab" id="k1l">최근 조사가</div><div class="val" id="k1">—</div><div class="sub" id="k1s"></div></div>
+      <div class="kpi"><div class="lab">이번 달 평균</div><div class="val" id="k2">—</div><div class="sub" id="k2s"></div></div>
+      <div class="kpi"><div class="lab">전년 동월 평균</div><div class="val" id="k3">—</div><div class="sub" id="k3s"></div></div>
+      <div class="kpi"><div class="lab">전년 동월 대비</div><div class="val" id="k4">—</div><div class="sub" id="k4s"></div></div>
+    </div>
+    <div class="row" style="justify-content:space-between;margin-top:18px">
+      <h2 style="margin:0">가격 변동</h2>
+      <div class="seg" id="range" role="group" aria-label="기간 선택">
+        <button data-d="30" aria-pressed="false">30일</button>
+        <button data-d="90" aria-pressed="true">90일</button>
+        <button data-d="180" aria-pressed="false">6개월</button>
+        <button data-d="365" aria-pressed="false">1년</button>
+      </div>
+    </div>
+    <div class="row" id="custom" style="margin-top:10px">
+      <label for="dFrom">기간 직접 선택</label>
+      <input type="date" id="dFrom" aria-label="시작일">
+      <span aria-hidden="true">~</span>
+      <input type="date" id="dTo" aria-label="종료일">
+    </div>
+    <div id="chart"><div id="tip"></div></div>
+    <p id="periodSum"></p>
+    <div class="legend"><span><i></i>올해</span><span><i class="prev"></i>전년 같은 날짜</span></div>
+    <p class="note" id="basis"></p>
+  </section>
+</div>
+
+<script>
+(function () {
+  "use strict";
+  var DATA = null, SEL = null, P = { days: 90, from: null, to: null };
+  var $ = function (id) { return document.getElementById(id); };
+  var NS = "http://www.w3.org/2000/svg";
+
+  function fmt(n, d) { return n == null ? "—" : n.toLocaleString("ko-KR", { maximumFractionDigits: d || 0 }); }
+  function pct(n) { return n == null ? "—" : (n > 0 ? "+" : "") + n.toFixed(1) + "%"; }
+  function cls(n) { return n == null ? "" : n > 0 ? "up" : n < 0 ? "down" : ""; }
+  function ymd(d) { return d.getFullYear() + "-" + String(d.getMonth() + 1).padStart(2, "0") + "-" + String(d.getDate()).padStart(2, "0"); }
+  function parse(s) { var p = s.split("-"); return new Date(+p[0], +p[1] - 1, +p[2]); }
+  function mdLabel(s) { var d = parse(s); return (d.getMonth() + 1) + "월 " + d.getDate() + "일"; }
+  function showMsg(html) { var m = $("msg"); m.innerHTML = html; m.style.display = "block"; }
+
+  // ---- 계산 ----
+  function prepare(item) {
+    var rows = item.daily.map(function (r) { return { d: r[0], t: parse(r[0]).getTime(), p: r[1] }; });
+    var byMonth = {};
+    rows.forEach(function (r) { var k = r.d.slice(0, 7); (byMonth[k] = byMonth[k] || []).push(r.p); });
+    item._rows = rows; item._byMonth = byMonth;
+    var last = rows[rows.length - 1];
+    item._last = last;
+    function avg(k) { var a = byMonth[k]; return a && a.length ? { v: a.reduce(function (x, y) { return x + y; }, 0) / a.length, n: a.length } : null; }
+    function prevYear(k) { return (+k.slice(0, 4) - 1) + k.slice(4); }
+    if (last) {
+      var mk = last.d.slice(0, 7);
+      item._month = mk; item._cur = avg(mk); item._py = avg(prevYear(mk));
+      item._yoy = item._cur && item._py ? (item._cur.v / item._py.v - 1) * 100 : null;
+      item._diff = item._cur && item._py ? item._cur.v - item._py.v : null;
+      var pm = new Date(parse(last.d).getFullYear(), parse(last.d).getMonth() - 1, 1);
+      var pk = ymd(pm).slice(0, 7);
+      var a = avg(pk), b = avg(prevYear(pk));
+      item._prevMonthKey = pk;
+      item._prevMonthYoy = a && b ? (a.v / b.v - 1) * 100 : null;
+    }
+  }
+
+  // ---- 필터 상태 ----
+  var F = { cat: "전체", se: null, q: "", expanded: false };
+  var COLLAPSE_AT = 24, EDGE = 12;
+
+  function visible() {
+    var q = F.q.trim();
+    return DATA.items.filter(function (i) {
+      return (F.cat === "전체" || i.cat === F.cat) && (!F.se || i.se === F.se) && (!q || i.label.indexOf(q) >= 0);
+    });
+  }
+
+  function drawFilters() {
+    var ses = [], cats = [];
+    DATA.items.forEach(function (i) {
+      if (ses.map(function (x) { return x.se; }).indexOf(i.se) < 0) ses.push({ se: i.se, nm: i.se_nm });
+      if (cats.indexOf(i.cat) < 0) cats.push(i.cat);
+    });
+    var seSeg = $("seSeg"); seSeg.textContent = "";
+    seSeg.hidden = ses.length < 2;
+    ses.forEach(function (x) {
+      var b = document.createElement("button"); b.type = "button"; b.textContent = x.nm;
+      b.setAttribute("aria-pressed", String(F.se === x.se));
+      b.addEventListener("click", function () { F.se = x.se; F.expanded = false; refresh(); });
+      seSeg.appendChild(b);
+    });
+    var chips = $("chips"); chips.textContent = "";
+    ["전체"].concat(cats).forEach(function (c) {
+      var n = DATA.items.filter(function (i) { return (c === "전체" || i.cat === c) && (!F.se || i.se === F.se); }).length;
+      var b = document.createElement("button"); b.type = "button"; b.className = "chip";
+      b.textContent = c + " " + n; b.setAttribute("aria-pressed", String(F.cat === c));
+      b.addEventListener("click", function () { F.cat = c; F.expanded = false; refresh(); });
+      chips.appendChild(b);
+    });
+    $("filters").hidden = false;
+  }
+
+  function fillSelect() {
+    var sel = $("sel"), list = visible(); sel.textContent = "";
+    var groups = {};
+    list.forEach(function (i) {
+      var g = F.cat === "전체" ? i.cat : "";
+      if (!groups[g]) {
+        var node = g ? document.createElement("optgroup") : sel; if (g) node.label = g;
+        groups[g] = node; if (g) sel.appendChild(node);
+      }
+      var o = document.createElement("option"); o.value = i.id; o.textContent = i.label; groups[g].appendChild(o);
+    });
+    if (SEL && list.some(function (i) { return i.id === SEL; })) sel.value = SEL;
+    return list;
+  }
+
+  // 필터가 바뀔 때: 목록·막대를 다시 그리고, 선택 품목이 목록에서 빠졌으면 첫 품목으로 이동
+  function refresh() {
+    drawFilters();
+    var list = fillSelect();
+    if (list.length && !list.some(function (i) { return i.id === SEL; })) select(list[0].id, false);
+    else drawOverview();
+  }
+
+  // ---- 개요 막대 ----
+  function drawOverview() {
+    var box = $("bars"); box.textContent = ""; $("moreWrap").textContent = "";
+    var list = visible().filter(function (i) { return i._yoy != null; }).sort(function (a, b) { return a._yoy - b._yoy; });
+    $("overview").hidden = false;
+    if (!list.length) {
+      var e = document.createElement("div"); e.className = "empty";
+      e.textContent = "조건에 맞고 전년 동월과 비교할 수 있는 품목이 없습니다."; box.appendChild(e); $("ovMonth").textContent = ""; return;
+    }
+    var ref = list[0]._month; $("ovMonth").textContent = "· " + ref.replace("-", "년 ") + "월 평균 기준 · " + list.length + "개 품목";
+    var mn = Math.min(0, list[0]._yoy), mx = Math.max(0, list[list.length - 1]._yoy), span = (mx - mn) || 1;
+    var zero = (-mn / span) * 100;
+    var collapsed = !F.expanded && list.length > COLLAPSE_AT;
+    var shown = collapsed ? list.slice(0, EDGE).concat([null], list.slice(list.length - EDGE)) : list;
+    shown.forEach(function (it) {
+      if (!it) {
+        var g = document.createElement("div"); g.className = "gap";
+        g.textContent = "⋯ 중간 " + (list.length - EDGE * 2) + "개 품목 생략 (가장 많이 내린 " + EDGE + "개 · 가장 많이 오른 " + EDGE + "개만 표시) ⋯";
+        box.appendChild(g); return;
+      }
+      var b = document.createElement("button"); b.className = "bar"; b.type = "button"; b.title = it.label;
+      b.setAttribute("aria-current", it.id === SEL ? "true" : "false");
+      var nm = document.createElement("span"); nm.className = "nm"; nm.textContent = it.label;
+      var area = document.createElement("span"); area.className = "area";
+      var z = document.createElement("span"); z.className = "zero"; z.style.left = zero + "%";
+      var f = document.createElement("span"); f.className = "fill";
+      var w = Math.abs(it._yoy) / span * 100;
+      f.style.width = w + "%"; f.style.left = (it._yoy >= 0 ? zero : zero - w) + "%";
+      f.style.background = it._yoy >= 0 ? "var(--up)" : "var(--down)";
+      area.appendChild(z); area.appendChild(f);
+      var pc = document.createElement("span"); pc.className = "pc " + cls(it._yoy); pc.textContent = pct(it._yoy);
+      b.appendChild(nm); b.appendChild(area); b.appendChild(pc);
+      b.addEventListener("click", function () { select(it.id, true); });
+      box.appendChild(b);
+    });
+    if (list.length > COLLAPSE_AT) {
+      var m = document.createElement("button"); m.type = "button"; m.className = "more";
+      m.textContent = F.expanded ? "접기" : "전체 " + list.length + "개 보기";
+      m.addEventListener("click", function () { F.expanded = !F.expanded; drawOverview(); });
+      $("moreWrap").appendChild(m);
+    }
+  }
+
+  // ---- KPI ----
+  function drawKpis(it) {
+    var u = (it.unit_sz || "") + (it.unit || "");
+    var last = it._last;
+    $("k1l").textContent = "최근 조사가 (" + (last ? mdLabel(last.d) : "—") + ")";
+    $("k1").textContent = last ? fmt(last.p) + "원" : "—";
+    $("k1s").textContent = u ? u + " 기준" : "";
+    $("k2").textContent = it._cur ? fmt(it._cur.v) + "원" : "—";
+    $("k2s").textContent = it._cur ? it._month.replace("-", "년 ") + "월 · 조사 " + it._cur.n + "일 평균" : "";
+    $("k3").textContent = it._py ? fmt(it._py.v) + "원" : "—";
+    $("k3s").textContent = it._py ? it._py.n + "일 평균" : "작년 같은 달 데이터 없음";
+    var k4 = $("k4"); k4.className = "val " + cls(it._yoy);
+    k4.textContent = pct(it._yoy);
+    var s = it._diff != null ? (it._diff > 0 ? "+" : "") + fmt(it._diff) + "원" : "";
+    if (it._prevMonthYoy != null) s += (s ? " · " : "") + "직전 월(" + (+it._prevMonthKey.slice(5)) + "월) " + pct(it._prevMonthYoy);
+    if (it._cur && it._cur.n < 5) s += (s ? " · " : "") + "월초라 조사일이 적어 변동이 큼";
+    $("k4s").textContent = s;
+  }
+
+  // ---- 꺾은선 ----
+  // 보여 줄 기간 계산: 직접 입력한 시작일·종료일이 있으면 그 기간, 없으면 최근 N일. 데이터 범위로 자른다.
+  function windowFor(it) {
+    var rows = it._rows, first = rows[0].t, last = rows[rows.length - 1].t, s, e;
+    if (P.from && P.to) { s = parse(P.from).getTime(); e = parse(P.to).getTime(); if (s > e) { var x = s; s = e; e = x; } }
+    else { e = last; s = last - P.days * 86400000; }
+    s = Math.max(s, first); e = Math.min(e, last);
+    if (s > e) s = e;
+    return { s: s, e: e };
+  }
+  function mean(a) { return a.reduce(function (x, y) { return x + y; }, 0) / a.length; }
+
+  function drawChart(it) {
+    var host = $("chart"), old = host.querySelector("svg"); if (old) host.removeChild(old);
+    var rows = it._rows; if (!rows.length) return;
+    var win = windowFor(it), start = win.s, end = win.e;
+    $("dFrom").min = $("dTo").min = rows[0].d; $("dFrom").max = $("dTo").max = rows[rows.length - 1].d;
+    $("dFrom").value = ymd(new Date(start)); $("dTo").value = ymd(new Date(end));
+    var cur = rows.filter(function (r) { return r.t >= start && r.t <= end; });
+    function shiftYear(t) { var d = new Date(t); d.setFullYear(d.getFullYear() + 1); return d.getTime(); }
+    var prev = rows.map(function (r) { return { t: shiftYear(r.t), p: r.p, d: r.d }; })
+      .filter(function (r) { return r.t >= start && r.t <= end; });
+    var ps = $("periodSum");
+    if (cur.length) {
+      var txt = ymd(new Date(start)) + " ~ " + ymd(new Date(end)) + " 평균 " + fmt(mean(cur.map(function (r) { return r.p; }))) + "원 (조사 " + cur.length + "일)";
+      // 전년 비교: 보관된 전년 데이터가 있는 구간만 골라 같은 날짜끼리 비교한다(일부만 있는 기간을 통째로 비교하면 잘못된 값이 나옴)
+      var s2 = Math.max(start, shiftYear(rows[0].t));
+      var cur2 = cur.filter(function (r) { return r.t >= s2; }), prev2 = prev.filter(function (r) { return r.t >= s2; });
+      if (cur2.length >= 5 && prev2.length >= cur2.length * 0.8) {
+        var ca2 = mean(cur2.map(function (r) { return r.p; })), pa2 = mean(prev2.map(function (r) { return r.p; }));
+        txt += " · 전년 같은 기간 평균 " + fmt(pa2) + "원 (" + pct((ca2 / pa2 - 1) * 100) + ")" +
+          (s2 > start ? " — 전년 데이터가 있는 " + ymd(new Date(s2)) + " 이후 구간 기준" : "");
+      } else txt += " · 전년 같은 기간 데이터 부족(보관 기간 밖)";
+      ps.textContent = txt;
+    } else ps.textContent = "";
+    var all = cur.concat(prev); if (!all.length) return;
+    var ymin = Math.min.apply(null, all.map(function (r) { return r.p; })), ymax = Math.max.apply(null, all.map(function (r) { return r.p; }));
+    var pad = (ymax - ymin) * 0.12 || ymax * 0.05 || 1; ymin -= pad; ymax += pad;
+    var W = Math.max(300, host.clientWidth || 800), H = W < 500 ? 260 : 320, L = W < 500 ? 48 : 58, R = 12, T = 12, B = 30;
+    function X(t) { return L + (t - start) / (end - start || 1) * (W - L - R); }
+    function Y(p) { return T + (1 - (p - ymin) / (ymax - ymin)) * (H - T - B); }
+    var svg = document.createElementNS(NS, "svg"); svg.setAttribute("viewBox", "0 0 " + W + " " + H);
+    svg.setAttribute("role", "img"); svg.setAttribute("aria-label", it.label + " 최근 가격 변동 그래프");
+    function el(n, a, txt) { var e = document.createElementNS(NS, n); for (var k in a) e.setAttribute(k, a[k]); if (txt != null) e.textContent = txt; svg.appendChild(e); return e; }
+    for (var i = 0; i <= 4; i++) {
+      var v = ymin + (ymax - ymin) * i / 4, y = Y(v);
+      el("line", { x1: L, x2: W - R, y1: y, y2: y, stroke: "var(--line)", "stroke-width": 1 });
+      el("text", { x: L - 8, y: y + 4, "text-anchor": "end", "font-size": 11, fill: "var(--muted)" }, fmt(v));
+    }
+    var ticks = W < 500 ? 3 : 5;
+    function tickLabel(t) {
+      var d = new Date(t);
+      return end - start > 300 * 86400000 ? String(d.getFullYear()).slice(2) + "." + (d.getMonth() + 1) + "." + d.getDate() : mdLabel(ymd(d));
+    }
+    for (var j = 0; j <= ticks; j++) {
+      var t = start + (end - start) * j / ticks;
+      el("text", { x: X(t), y: H - 8, "text-anchor": j === 0 ? "start" : j === ticks ? "end" : "middle", "font-size": 11, fill: "var(--muted)" }, tickLabel(t));
+    }
+    function path(arr, stroke, dash) {
+      if (!arr.length) return;
+      var d = arr.map(function (r, i) { return (i ? "L" : "M") + X(r.t).toFixed(1) + " " + Y(r.p).toFixed(1); }).join(" ");
+      var a = { d: d, fill: "none", stroke: stroke, "stroke-width": 2, "stroke-linejoin": "round", "stroke-linecap": "round" };
+      if (dash) a["stroke-dasharray"] = "5 4";
+      el("path", a);
+    }
+    path(prev, "var(--prev)", true);
+    path(cur, "var(--cur)", false);
+    var dot = el("circle", { r: 4, fill: "var(--cur)", stroke: "var(--panel)", "stroke-width": 2, visibility: "hidden" });
+    var hit = el("rect", { x: L, y: T, width: W - L - R, height: H - T - B, fill: "transparent" });
+    host.appendChild(svg);
+
+    var tip = $("tip");
+    function move(ev) {
+      var rect = svg.getBoundingClientRect(), pt = ev.touches ? ev.touches[0] : ev;
+      var sx = (pt.clientX - rect.left) / rect.width * W;
+      var t = start + (sx - L) / (W - L - R) * (end - start), best = null, bd = 1e18;
+      cur.forEach(function (r) { var dd = Math.abs(r.t - t); if (dd < bd) { bd = dd; best = r; } });
+      if (!best) return;
+      var pv = null, pd = 4 * 86400000;
+      prev.forEach(function (r) { var dd = Math.abs(r.t - best.t); if (dd < pd) { pd = dd; pv = r; } });
+      dot.setAttribute("cx", X(best.t)); dot.setAttribute("cy", Y(best.p)); dot.setAttribute("visibility", "visible");
+      tip.innerHTML = "";
+      var l1 = document.createElement("div"); l1.textContent = mdLabel(best.d); l1.style.fontWeight = "600";
+      var l2 = document.createElement("div"); l2.textContent = "올해 " + fmt(best.p) + "원";
+      tip.appendChild(l1); tip.appendChild(l2);
+      if (pv) { var l3 = document.createElement("div"); l3.style.color = "var(--muted)"; l3.textContent = "전년 " + fmt(pv.p) + "원 (" + pct((best.p / pv.p - 1) * 100) + ")"; tip.appendChild(l3); }
+      tip.style.display = "block";
+      var hw = host.getBoundingClientRect(), tx = X(best.t) / W * rect.width + 12;
+      if (tx + tip.offsetWidth > hw.width) tx = X(best.t) / W * rect.width - tip.offsetWidth - 12;
+      tip.style.left = Math.max(0, tx) + "px"; tip.style.top = (Y(best.p) / H * rect.height - 10) + "px";
+    }
+    function leave() { tip.style.display = "none"; dot.setAttribute("visibility", "hidden"); }
+    hit.addEventListener("mousemove", move); hit.addEventListener("mouseleave", leave);
+    hit.addEventListener("touchstart", move, { passive: true }); hit.addEventListener("touchmove", move, { passive: true });
+    hit.addEventListener("touchend", leave);
+  }
+
+  // ---- 선택 ----
+  function select(id, scroll) {
+    var it = DATA.items.filter(function (i) { return i.id === id; })[0] || visible()[0] || DATA.items[0];
+    if (!visible().some(function (i) { return i.id === it.id; })) {   // 필터 밖 품목이면 필터를 맞춘다
+      F.cat = it.cat; F.se = it.se; F.q = ""; $("q").value = ""; F.expanded = false;
+      drawFilters(); fillSelect();
+    }
+    SEL = it.id; $("sel").value = SEL;
+    if (history.replaceState) history.replaceState(null, "", "#" + SEL);
+    drawKpis(it); drawChart(it); drawOverview();
+    if (scroll) $("detail").scrollIntoView({ behavior: "smooth", block: "start" });
+  }
+  function current() { return DATA.items.filter(function (i) { return i.id === SEL; })[0]; }
+
+  function init(d) {
+    DATA = d;
+    if (!d.items || !d.items.length) { showMsg("data.json에 품목이 없습니다. collect.py를 먼저 실행해 주세요."); return; }
+    d.items.forEach(function (i) { i.cat = i.cat || "기타"; i.se = i.se || "01"; i.se_nm = i.se_nm || "소매"; prepare(i); });
+    d.items = d.items.filter(function (i) { return i._rows.length; });
+    if (!d.items.length) { showMsg("수집된 가격 데이터가 아직 없습니다."); return; }
+    var hasRetail = d.items.some(function (i) { return i.se === "01"; });
+    F.se = hasRetail ? "01" : d.items[0].se;
+    var upd = d.updated ? new Date(d.updated) : null;
+    $("meta").textContent = (d.source || "") + (d.basis ? " · " + d.basis : "") +
+      (upd && !isNaN(upd) ? " · 업데이트 " + upd.toLocaleString("ko-KR", { month: "long", day: "numeric", hour: "2-digit", minute: "2-digit" }) : "");
+    $("basis").textContent = "전년 동월 대비 = (이번 달 1일부터 최근 조사일까지의 평균 ÷ 작년 같은 달 전체 평균 − 1). " +
+      "월초에는 조사일 수가 적어 값이 크게 흔들릴 수 있습니다. 가격은 조사 시장의 단순평균(구분·품종·등급별)이며 토·일·공휴일은 조사하지 않습니다.";
+    $("sel").addEventListener("change", function () { select($("sel").value, false); });
+    var qt; $("q").addEventListener("input", function () {
+      clearTimeout(qt); qt = setTimeout(function () { F.q = $("q").value; F.expanded = false; refresh(); }, 150);
+    });
+    Array.prototype.forEach.call($("range").querySelectorAll("button"), function (b) {
+      b.addEventListener("click", function () {
+        P.days = +b.getAttribute("data-d"); P.from = P.to = null;
+        Array.prototype.forEach.call($("range").querySelectorAll("button"), function (x) { x.setAttribute("aria-pressed", x === b ? "true" : "false"); });
+        drawChart(current());
+      });
+    });
+    function onDate(which) {
+      var f = $("dFrom").value, t = $("dTo").value;
+      if (!f || !t) return;
+      if (f > t) { if (which === "from") t = f; else f = t; }   // 순서가 어긋나면 방금 바꾸지 않은 쪽을 맞춘다
+      P.from = f; P.to = t;
+      Array.prototype.forEach.call($("range").querySelectorAll("button"), function (x) { x.setAttribute("aria-pressed", "false"); });
+      drawChart(current());
+    }
+    $("dFrom").addEventListener("change", function () { onDate("from"); });
+    $("dTo").addEventListener("change", function () { onDate("to"); });
+    $("detail").hidden = false;
+    drawFilters(); fillSelect();
+    var want = (location.hash || "").slice(1);
+    select(want || (visible()[0] || d.items[0]).id, false);
+    var rt; window.addEventListener("resize", function () { clearTimeout(rt); rt = setTimeout(function () { drawChart(current()); }, 150); });
+  }
+
+  fetch("data.json", { cache: "no-store" })
+    .then(function (r) { if (!r.ok) throw new Error(r.status); return r.json(); })
+    .then(init)
+    .catch(function () {
+      $("meta").textContent = "data.json을 불러오지 못했습니다.";
+      showMsg("<b>data.json을 읽을 수 없습니다.</b><br>① <code>python collect.py</code>로 data.json을 먼저 만들고, " +
+        "② 파일을 직접 여는 대신 <code>python -m http.server</code> 후 <code>http://localhost:8000</code>으로 열어 주세요(브라우저가 file:// 로는 데이터 파일을 막습니다).");
+    });
+})();
+</script>
+</body>
+</html>
